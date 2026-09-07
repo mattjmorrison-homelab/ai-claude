@@ -8,3 +8,7 @@
 !skills/**
 !hooks/
 !hooks/**
+!.github/
+!.github/**
+!scripts/
+!scripts/**
