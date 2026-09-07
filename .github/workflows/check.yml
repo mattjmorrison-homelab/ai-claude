@@ -1,0 +1,22 @@
+name: Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check:
+    runs-on: k8s-amd64
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: mattjmorrison-homelab/actions-bash@08b4f8486d603001eaa42e1da223ddd91a9e3af2 # main
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh hooks/*.sh
+
+      - name: actionlint
+        run: actionlint
+
+      - name: Validate agent/skill frontmatter
+        run: bash scripts/validate-agents-and-skills.sh
