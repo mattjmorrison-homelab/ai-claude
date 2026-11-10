@@ -1,12 +1,12 @@
 ---
 name: homelab-add-app
-description: Use this skill whenever the user wants to add a new service/app to their k3s homelab cluster, deploy something new via ArgoCD, or create a new `homelab-<service>` repo. Covers the full checklist beyond just writing Kubernetes manifests — OpenBao secrets wiring, Pi-hole local DNS so the new hostname actually resolves on the LAN, the homepage dashboard entry, and the ArgoCD Application registration in homelab-apps. Trigger on phrases like "add X to the cluster", "deploy a new service", "set up homelab-X", "get X running in k3s" — even if the user only explicitly asks for the Kubernetes manifests, since the DNS and homepage steps are easy to forget and have already caused a real, confusing bug in this homelab.
+description: Use this skill whenever the user wants to add a new service/app to their k3s homelab cluster, deploy something new via ArgoCD, or create a new `k8s-<service>` repo. Covers the full checklist beyond just writing Kubernetes manifests — OpenBao secrets wiring, Pi-hole local DNS so the new hostname actually resolves on the LAN, the homepage dashboard entry, and the ArgoCD Application registration in k8s-apps. Trigger on phrases like "add X to the cluster", "deploy a new service", "set up k8s-X", "get X running in k3s" — even if the user only explicitly asks for the Kubernetes manifests, since the DNS and homepage steps are easy to forget and have already caused a real, confusing bug in this homelab.
 ---
 
 # Adding a new app to the homelab k3s cluster
 
-This homelab runs everything through ArgoCD, with one `homelab-<service>` repo
-per app and a central `homelab-apps` repo holding the ArgoCD Application
+This homelab runs everything through ArgoCD, with one `k8s-<service>` repo
+per app and a central `k8s-apps` repo holding the ArgoCD Application
 manifests. Writing the Kubernetes manifests is only part of getting a new app
 live — three other repos need updating too, and skipping any of them produces
 confusing symptoms rather than an obvious error. For example: forgetting the
@@ -19,7 +19,7 @@ exact workflow already produced once.
 
 For a new service called `<app>` in namespace `<app>`:
 
-### 1. `homelab-<app>` repo — the manifests
+### 1. `k8s-<app>` repo — the manifests
 
 - `manifests/namespace.yaml` — dedicated namespace matching the app name
   (this homelab's convention: one namespace per standalone service, not a
@@ -28,7 +28,7 @@ For a new service called `<app>` in namespace `<app>`:
 - `manifests/deployment.yaml`, `service.yaml`, plus any `configmap.yaml` /
   `pvc.yaml` the app needs
 - `manifests/ingress.yaml` — host `<app>.morrisons.site`, `ingressClassName:
-  traefik`. No TLS block needed — `homelab-cert-manager-config` installs a
+  traefik`. No TLS block needed — `k8s-cert-manager-config` installs a
   cluster-wide wildcard `*.morrisons.site` cert as Traefik's default, so
   every ingress picks it up automatically.
 - If the app needs credentials, don't hardcode them into any manifest — these
@@ -38,7 +38,7 @@ For a new service called `<app>` in namespace `<app>`:
 
 - `manifests/serviceaccount.yaml` — ServiceAccount named `<app>`
 - `manifests/secret-store.yaml` — SecretStore named `openbao`, Vault provider
-  pointed at `http://homelab-openbao.openbao.svc:8200`, kv v2, Kubernetes
+  pointed at `http://k8s-openbao.openbao.svc:8200`, kv v2, Kubernetes
   auth role `<app>`
 - `manifests/external-secret.yaml` — pulls from `kv/homelab/<app>` into a k8s
   Secret the Deployment references
@@ -51,7 +51,7 @@ For a new service called `<app>` in namespace `<app>`:
   uses directly, not read via a ServiceAccount) consider whether a small
   bootstrap Job (ArgoCD `PreSync` hook) can mint and store it automatically
   instead of asking the user to click through OpenBao's UI by hand — see
-  `homelab-cloudflare`'s or `homelab-woodpecker`'s bootstrap Job for the
+  `k8s-cloudflare`'s or `homelab-woodpecker`'s bootstrap Job for the
   pattern. Automating a manual step is worth the extra complexity when the
   step would otherwise recur or be error-prone to do by hand.
 - **If you add a bootstrap Job as a `PreSync` hook, every resource it
@@ -79,12 +79,17 @@ For a new service called `<app>` in namespace `<app>`:
   accidental major-version upgrades. Check the project's actual tagging
   scheme rather than defaulting to `:latest` for anything unfamiliar.
 
-### 3. `homelab-pihole` — local DNS (easy to forget)
+### 3. `admin-network` — local DNS (easy to forget)
 
-- Add `address=/<app>.morrisons.site/<cluster-ip>` to
-  `manifests/configmap-local-dns.yaml`, matching the existing entries —
-  check the file for the current cluster IP rather than assuming, since it
-  may change as the homelab's network setup evolves.
+- Add `<app>.morrisons.site` to the `ingressHosts` list in
+  `ingress-hosts.yaml`, matching the existing entries. Don't edit
+  `k8s-pihole` directly for this — `admin-network/ingress-hosts.yaml` is
+  the single source of truth for `*.morrisons.site` ingress hostnames.
+  `k8s-pihole` consumes this file as a shared ArgoCD multi-source values
+  file and turns each entry into a static DNS record pointed at
+  `piholeAddress` (from `admin-network/local-hosts.yaml`) automatically —
+  pushing the change to `admin-network` is enough; no manual trigger or
+  edit in `k8s-pihole` itself is needed.
 - Why this matters: `morrisons.site` DNS is hosted on Cloudflare, and any
   request that doesn't hit this local override falls through to the public
   internet. Since there's no Cloudflare Tunnel or port-forward reachability
@@ -92,7 +97,7 @@ For a new service called `<app>` in namespace `<app>`:
   timeout page in the browser — which looks like an app or network problem
   but is actually just a missing DNS entry.
 
-### 4. `homelab-homepage` — dashboard entry
+### 4. `k8s-homepage` — dashboard entry
 
 - Add an entry to `manifests/configmap.yaml`'s `services.yaml`, under
   whichever group fits (`Infrastructure`, `Monitoring`, `Home`, or a new
@@ -101,15 +106,15 @@ For a new service called `<app>` in namespace `<app>`:
   fine if the guess doesn't resolve, it just shows a blank icon), and a
   one-line `description`.
 
-### 5. `homelab-apps` — register the ArgoCD Application
+### 5. `k8s-apps` — register the ArgoCD Application
 
-- Add `homelab-<app>.yaml`: `metadata.name: homelab-<app>`,
+- Add `k8s-<app>.yaml`: `metadata.name: k8s-<app>`,
   `spec.source.repoURL` pointing at
-  `https://github.com/mattjmorrison/homelab-<app>`, `path: manifests`,
+  `https://github.com/mattjmorrison-homelab/k8s-<app>`, `path: manifests`,
   `destination.namespace: <app>`, `syncPolicy.automated` with `prune: true`
   / `selfHeal: true` — matches every other app in this repo.
 - **If the new app's own repo hasn't been pushed to GitHub yet, don't
-  include its Application manifest in the same `homelab-apps` push.** ArgoCD
+  include its Application manifest in the same `k8s-apps` push.** ArgoCD
   will try to sync a repo that doesn't exist yet and fire the
   `ArgoCDAppMissing` Discord alert. Hold it back until both are ready to go
   out together.
