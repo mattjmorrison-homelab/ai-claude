@@ -68,7 +68,7 @@ moving part for an unattended job:
 ```sh
 curl -s -X POST https://graph-ad-reporter.morrisons.site/graphql \
   -H "Content-Type: application/json" \
-  -d '{"query":"{ unresolvedReports(since: \"<now minus 1 hour, UTC ISO8601>\") { id timestamp clientIp resolved resolutionNote } }"}'
+  -d '{"query":"{ ad { unresolved(since: \"<now minus 1 hour, UTC ISO8601>\") { id timestamp clientIp resolved resolutionNote } } }"}'
 ```
 
 If the response has no reports, stop -- nothing to do this run.
@@ -177,7 +177,7 @@ step for anything that isn't an obvious match:
   ```sh
   curl -s -X POST https://graph-ad-reporter.morrisons.site/graphql \
     -H "Content-Type: application/json" \
-    -d '{"query":"mutation { resolveReport(id: \"<id>\", resolutionNote: \"<domain> blocked\") { id resolved } }"}'
+    -d '{"query":"mutation { ad { resolve(id: \"<id>\", resolutionNote: \"<domain> blocked\") { id resolved } } }"}'
   ```
 
 - **Confirmed legit, no ad domain found anywhere in this report's whole
@@ -186,11 +186,11 @@ step for anything that isn't an obvious match:
   ```sh
   curl -s -X POST https://graph-ad-reporter.morrisons.site/graphql \
     -H "Content-Type: application/json" \
-    -d '{"query":"mutation { resolveReport(id: \"<id>\", resolutionNote: \"no ad domain found; candidates confirmed legit\") { id resolved } }"}'
+    -d '{"query":"mutation { ad { resolve(id: \"<id>\", resolutionNote: \"no ad domain found; candidates confirmed legit\") { id resolved } } }"}'
   ```
 
 - **Ambiguous**: post one summary message to the suspicious webhook
-  (domain, reasoning, report id). **Do not call `resolveReport`** --
+  (domain, reasoning, report id). **Do not call `resolve`** --
   leave `resolved: false`. This is deliberate: the report ages out of the
   next run's `since: now-1h` window and becomes a standing item on
   `/unresolved` for a human, instead of retrying forever.
